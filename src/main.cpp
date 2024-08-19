@@ -158,6 +158,9 @@ unsigned char tempD = 0x0;
 double distance = 0;
 const double threshold = 5;
 
+unsigned long LED_counter = 0;
+unsigned long buzzer_counter = 0;
+
 enum sevSegStates {Digit1, Digit2, Digit3} sevSegState;
 enum sonarStates {Hold, Scan} sonarState;
 enum LEDStates {LEDOff, LEDOn} LEDState;
@@ -248,6 +251,7 @@ void TickFct_LED()
             if(distance <= threshold)
             {
                 LEDState = LEDOn;
+                LED_counter = 0;
             }
             else
             {
@@ -261,13 +265,26 @@ void TickFct_LED()
             }
             else
             {
-                set<B>(PORTB5, 1);
+                if(LED_counter <= 50)
+                {
+                    set<B>(PORTB5, 1);
+                }
+                else
+                {
+                    set<B>(PORTB5, 0);
+                    if(LED_counter >= 500)
+                    {
+                        LED_counter = 0;
+                    }
+                }
             }
             break;
         default:
             LEDState = LEDOff;
             break;
     }
+
+    LED_counter++;
 }
 
 void TickFct_Buzzer()
@@ -278,6 +295,7 @@ void TickFct_Buzzer()
             if(distance <= threshold)
             {
                 buzzerState = buzzerOn;
+                buzzer_counter = 0;
             }
             else
             {
@@ -291,13 +309,26 @@ void TickFct_Buzzer()
             }
             else
             {
-                set<C>(PORTC0, 1);
+                if(buzzer_counter <= 20)
+                {
+                    set<C>(PORTC0, 1);
+                }
+                else
+                {
+                    set<C>(PORTC0, 0);
+                    if(buzzer_counter >= 400)
+                    {
+                        buzzer_counter = 0;
+                    }
+                }
             }
             break;
         default:
             buzzerState = buzzerOff;
             break;
     }
+
+    buzzer_counter++;
 }
 
 int main() 
