@@ -50,10 +50,6 @@ void set(int pad, bool value) {
 }
 // ******************************************************************************* //
 
-
-
-
-
 // 7segment display 0-9 (don't need A-F)
 unsigned char seg7[] = {
 //    gfedcba
@@ -130,33 +126,228 @@ double read_sonar() {
 // TODO! Translate each comment into code
 void tx_shift(unsigned char dat) {
     // reset RCLK line
+    set<B>(1, 0);
     for (int i = 7; i >= 0; --i) { // for each bit in dat
         // reset SRCLK line
+        set<B>(2, 0);
         // extract i'th bit from dat and assign to SER line
-        // _delay_us(10); // wait 10us---you're welcome to add a slight delay, although I didn't need it
+        int bit = (dat >> i) & 1;
+        set<B>(0, bit);
+        _delay_us(10); // wait 10us---you're welcome to add a slight delay, although I didn't need it
         // set SRCLK line
+        set<B>(2, 1);
     }
     // set RCLK line
-
+    set<B>(1, 1);
 }
 
+typedef struct _task{
+    // Tasks should have members that include: state, period,
+    //a measurement of elapsed time, and a function pointer.
+    signed char state; //Task's current state
+    unsigned long period; //Task period
+    unsigned long elapsedTime; //Time elapsed since last task tick
+    int (*TickFct)(int); //Task tick function
+} task;
 
+// Other global variables
+unsigned char tempB = 0x0;
+unsigned char tempC = 0x0;
+unsigned char tempD = 0x0;
 
-int main() {
+double distance = 0;
+const double threshold = 5;
+
+enum sevSegStates {Digit1, Digit2, Digit3} sevSegState;
+enum sonarStates {Hold, Scan} sonarState;
+enum LEDStates {LEDOff, LEDOn} LEDState;
+enum buzzerStates {buzzerOff, buzzerOn} buzzerState;
+
+void TickFct_SevSeg()
+{
+    int distance_to_int = static_cast<int>(distance);
+    int digit1 = distance_to_int % 10;
+    int digit2 = (distance_to_int / 10) % 10;
+    int digit3 = (distance_to_int / 100) % 10;
+
+    switch(sevSegState)
+    {
+        case Digit1:
+            sevSegState = Digit2;
+            break;
+        case Digit2:
+            sevSegState = Digit3;
+            break;
+        case Digit3:
+            sevSegState = Digit1;
+            break;
+        default:
+            sevSegState = Digit1;
+            break;
+    }
+
+    switch(sevSegState)
+    {
+        case Digit1:
+            set<C>(PORTC3, 1);
+            set<C>(PORTC4, 1);
+            set<C>(PORTC5, 1);
+            PORTD = seg7[digit1] << 1;
+            // PORTD = seg7[3] << 1;
+            set<C>(PORTC3, 0);
+            break;
+        case Digit2:
+            set<C>(PORTC3, 1);
+            set<C>(PORTC4, 1);
+            set<C>(PORTC5, 1);
+            PORTD = seg7[digit2] << 1;
+            // PORTD = seg7[1] << 1;
+            set<C>(PORTC4, 0);
+            break;
+        case Digit3:
+            set<C>(PORTC3, 1);
+            set<C>(PORTC4, 1);
+            set<C>(PORTC5, 1);
+            PORTD = seg7[digit3] << 1;
+            // PORTD = seg7[9] << 1;
+            set<C>(PORTC5, 0);
+            break;
+    }
+}
+
+void TickFct_Sonar()
+{
+    switch(sonarState)
+    {
+        case Hold:
+            sonarState = Scan;
+            break;
+        case Scan:
+            sonarState = Hold;
+            break;
+        default:
+            sonarState = Hold;
+            break;
+    }
+
+    switch(sonarState)
+    {
+        case Hold:
+            break;
+        case Scan:
+            distance = read_sonar();
+            break;
+    }
+}
+
+void TickFct_LED()
+{
+    switch(LEDState)
+    {
+        case LEDOff:
+            if(distance <= threshold)
+            {
+                LEDState = LEDOn;
+            }
+            else
+            {
+                set<B>(PORTB5, 0);
+            }
+            break;
+        case LEDOn:
+            if(distance > threshold)
+            {
+                LEDState = LEDOff;
+            }
+            else
+            {
+                set<B>(PORTB5, 1);
+            }
+            break;
+        default:
+            LEDState = LEDOff;
+            break;
+    }
+}
+
+void TickFct_Buzzer()
+{
+    switch(buzzerState)
+    {
+        case buzzerOff:
+            if(distance <= threshold)
+            {
+                buzzerState = buzzerOn;
+            }
+            else
+            {
+                set<C>(PORTC0, 0);
+            }
+            break;
+        case buzzerOn:
+            if(distance > threshold)
+            {
+                buzzerState = buzzerOff;
+            }
+            else
+            {
+                set<C>(PORTC0, 1);
+            }
+            break;
+        default:
+            buzzerState = buzzerOff;
+            break;
+    }
+}
+
+int main() 
+{
+    unsigned long sevSeg_elapsedTime = 10;
+    unsigned long sonar_elapsedTime = 75;
+    unsigned long LED_elapsedTime = 50;
+    unsigned long buzzer_elapsedTime = 20;
+    const unsigned long timerPeriod = 1;
 
     DDRB = 0xFF;
     DDRC = 0xFD;
     DDRD = 0xFF;
 
-    TimerSet(1);
+    TimerSet(timerPeriod);
     TimerOn();
 
+    sevSegState = Digit1;
+
     while (1) {
+        // int sonarResult = (int) read_sonar();
+        // distance = sonarResult;
 
         // your tick function calls go here
+        // TickFct_SevSeg();
+        // while (!TimerFlag);
+        // TimerFlag = false;
 
-        while (!TimerFlag);
+        // TickFct_SevSeg();
+
+        TickFct_LED();
+        TickFct_Buzzer();
+
+        if(sevSeg_elapsedTime >= 10)
+        {
+            TickFct_SevSeg();
+            sevSeg_elapsedTime = 0;
+        }
+        if(sonar_elapsedTime >= 75)
+        {
+            TickFct_Sonar();
+            sonar_elapsedTime = 0;
+        }
+
+        while(!TimerFlag){}
+
         TimerFlag = false;
+
+        sevSeg_elapsedTime += timerPeriod;
+        sonar_elapsedTime += timerPeriod;
     }
 
     return 0;
