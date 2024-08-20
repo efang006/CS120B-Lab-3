@@ -94,9 +94,35 @@ const float duty_max = 15;
 const float duty_map = duty_max / (max_dist - min_dist);
 unsigned duty_green = 0;
 
+/* 
+    Implement a function that takes in the dist (in cm) and spits out two duty cycles for the Red and Green LEDs
+    Distance > 15cm yield Green
+    Distance < 7cm yield Red
+    Distances in between yield Yellow
+    (Distance) => 16 - 15 - 14 - 13 - 12 - 11 - 10 - 9 - 8 - 7 - 6
+    (Green/Red) => 100/0 - 90/10 - 80/20 - 70/30 - 60/40 - 50/50 - 40/60 - 30/70 - 20/80 - 10/90 - 0/100
+*/
+void map_distance_to_color(int dist) 
+{
+    if (dist > 15) 
+    {
+        // Set to full Green
+        duty_green = duty_max;
+    } 
+    else if (dist < 7) 
+    {
+        // Set to full Red
+        duty_green = 0;
+    } 
+    else 
+    {
+        // Map distance to intermediate Yellow (mix of red and green)
+        int range = 15 - 7; // The range between 7 and 15 cm
+        int position = 16 - dist; // Position within the range
 
-void map_distance_to_color(int dist) {
-    /* Implement a function that takes in the dist (in cm) and spits out two duty cycles for the Red and Green LEDs*/
+        // Linearly map position to duty cycles
+        duty_green = (duty_max * (range - position)) / range;  // Scale down Green
+    }
 }
 
 
@@ -151,20 +177,19 @@ typedef struct _task{
 } task;
 
 // Other global variables
-unsigned char tempB = 0x0;
-unsigned char tempC = 0x0;
-unsigned char tempD = 0x0;
-
 double distance = 0;
 const double threshold = 5;
 
 unsigned long LED_counter = 0;
 unsigned long buzzer_counter = 0;
 
+unsigned long RGB_counter = 0;
+
 enum sevSegStates {Digit1, Digit2, Digit3} sevSegState;
 enum sonarStates {Hold, Scan} sonarState;
 enum LEDStates {LEDOff, LEDOn} LEDState;
 enum buzzerStates {buzzerOff, buzzerOn} buzzerState;
+enum RGBStates {RGBRed, RGBGreen} RGBState;
 
 void TickFct_SevSeg()
 {
@@ -331,12 +356,45 @@ void TickFct_Buzzer()
     buzzer_counter++;
 }
 
+void TickFct_RGB()
+{
+    map_distance_to_color(distance);
+    switch(RGBState)
+    {
+        case RGBGreen:
+            if(RGB_counter < duty_green)
+            {
+                set<B>(GREEN_PIN, 1);
+            }
+            else if(RGB_counter >= duty_green)
+            {
+                set<B>(GREEN_PIN, 0);
+                RGBState = RGBRed;
+                RGB_counter = 0;
+            }
+            break;
+        case RGBRed:
+            if(RGB_counter < (duty_max - duty_green))
+            {
+                set<B>(RED_PIN, 1);
+            }
+            else if(RGB_counter >= (duty_max - duty_green))
+            {
+                set<B>(RED_PIN, 0);
+                RGBState = RGBGreen;
+                RGB_counter = 0;
+            }
+            break;
+    }
+    RGB_counter++;
+}
+
 int main() 
 {
+    // set<B>(PORTB3, 1);
+
     unsigned long sevSeg_elapsedTime = 10;
     unsigned long sonar_elapsedTime = 75;
-    unsigned long LED_elapsedTime = 50;
-    unsigned long buzzer_elapsedTime = 20;
     const unsigned long timerPeriod = 1;
 
     DDRB = 0xFF;
@@ -361,6 +419,7 @@ int main()
 
         TickFct_LED();
         TickFct_Buzzer();
+        TickFct_RGB();
 
         if(sevSeg_elapsedTime >= 10)
         {
