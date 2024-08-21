@@ -87,6 +87,10 @@ unsigned int gThreshold = 0; /* choose a threshold distance */
 // Sonar Pins
 #define SONAR_TRIG  PORTC2
 #define SONAR_ECHO  PINC1
+// Shift Register Pins
+#define SER_PIN     PORTB0
+#define RCLK_PIN    PORTB1
+#define SRCLK_PIN   PORTB2
 
 const int min_dist = 5;
 const int max_dist = 30;
@@ -116,12 +120,43 @@ void map_distance_to_color(int dist)
     } 
     else 
     {
+        /*
         // Map distance to intermediate Yellow (mix of red and green)
-        int range = 15 - 7; // The range between 7 and 15 cm
+        int range = 15 - 6; // The range between 7 and 15 cm
         int position = 16 - dist; // Position within the range
 
         // Linearly map position to duty cycles
         duty_green = (duty_max * (range - position)) / range;  // Scale down Green
+        */
+
+       // Manual mapping
+       switch(dist)
+       {
+            case 14:
+                duty_green = 14;
+                break;
+            case 13:
+                duty_green = 13;
+                break;
+            case 12:
+                duty_green = 11;
+                break;
+            case 11:
+                duty_green = 9;
+                break;
+            case 10:
+                duty_green = 8;
+                break;
+            case 9:
+                duty_green = 6;
+                break;
+            case 8:
+                duty_green = 5;
+                break;
+            case 7:
+                duty_green = 2;
+                break;
+       }
     }
 }
 
@@ -152,19 +187,19 @@ double read_sonar() {
 // TODO! Translate each comment into code
 void tx_shift(unsigned char dat) {
     // reset RCLK line
-    set<B>(1, 0);
+    set<B>(RCLK_PIN, 0);
     for (int i = 7; i >= 0; --i) { // for each bit in dat
         // reset SRCLK line
-        set<B>(2, 0);
+        set<B>(SRCLK_PIN, 0);
         // extract i'th bit from dat and assign to SER line
         int bit = (dat >> i) & 1;
-        set<B>(0, bit);
-        _delay_us(10); // wait 10us---you're welcome to add a slight delay, although I didn't need it
+        set<B>(SER_PIN, bit);
+        // _delay_us(10); // wait 10us---you're welcome to add a slight delay, although I didn't need it
         // set SRCLK line
-        set<B>(2, 1);
+        set<B>(SRCLK_PIN, 1);
     }
     // set RCLK line
-    set<B>(1, 1);
+    set<B>(RCLK_PIN, 1);
 }
 
 typedef struct _task{
@@ -185,11 +220,14 @@ unsigned long buzzer_counter = 0;
 
 unsigned long RGB_counter = 0;
 
+int motor_counter = 0;
+
 enum sevSegStates {Digit1, Digit2, Digit3} sevSegState;
 enum sonarStates {Hold, Scan} sonarState;
 enum LEDStates {LEDOff, LEDOn} LEDState;
 enum buzzerStates {buzzerOff, buzzerOn} buzzerState;
 enum RGBStates {RGBRed, RGBGreen} RGBState;
+enum motorStates {motorForward, motorReverse} motorState;
 
 void TickFct_SevSeg()
 {
@@ -389,6 +427,37 @@ void TickFct_RGB()
     RGB_counter++;
 }
 
+void TickFct_Motor()
+{
+    switch(motorState)
+    {
+        case motorForward:
+            if(distance <= threshold)
+            {
+                motorState = motorReverse;
+            }
+            else
+            {
+                tx_shift(phases[motor_counter]);
+                motor_counter = (++motor_counter > 7) ? 0 : motor_counter; // cycle i from 0 -> 7 -> 0...
+                _delay_ms(1);
+            }
+            break;
+        case motorReverse:
+            if(distance > threshold)
+            {
+                motorState = motorForward;
+            }
+            else
+            {
+                tx_shift(phases[motor_counter]);
+                motor_counter = (--motor_counter < 0) ? 7 : motor_counter; // cycle i from 0 -> 7 -> 0...
+                _delay_ms(1);
+            }
+            break;
+    }
+}
+
 int main() 
 {
     // set<B>(PORTB3, 1);
@@ -420,6 +489,7 @@ int main()
         TickFct_LED();
         TickFct_Buzzer();
         TickFct_RGB();
+        TickFct_Motor();
 
         if(sevSeg_elapsedTime >= 10)
         {
@@ -441,4 +511,19 @@ int main()
     }
 
     return 0;
-}
+
+    /*
+
+    DDRD = 0xFF;
+    int i = 0;
+    // rotates stepper motor clockwise continuously
+    while (1) 
+    {
+        tx_shift(phases[i]);
+        i = (++i > 7) ? 0 : i; // cycle i from 0 -> 7 -> 0...
+        _delay_ms(1);
+    }
+    return 0;
+
+    */
+    }
